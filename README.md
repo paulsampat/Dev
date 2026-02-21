@@ -1,4 +1,4 @@
-Initial version oF  Black Scholes Prier with a simple FAST API Interface
+Initial version of  Black Scholes Prier with a simple FAST API Interface
 UI where you can vary spot, K, Expiry, Vol and see the change in Price and Greeks
 Next steps :
 Expose as an MCP exdpoint
