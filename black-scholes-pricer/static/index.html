@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Black-Scholes Options Pricer</title>
+  <!-- Chart.js + annotation plugin (auto-registers) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- ── Header ──────────────────────────────────────────── -->
+    <header class="app-header">
+      <div class="header-left">
+        <span class="header-logo">⬡</span>
+        <h1>Black-Scholes <span class="dim">Options Pricer</span></h1>
+      </div>
+      <div class="header-right">
+        <span id="statusDot" class="status-dot ok"></span>
+        <span id="statusText" class="status-label">Live</span>
+        <a href="/docs" target="_blank" class="docs-link">API Docs</a>
+      </div>
+    </header>
+
+    <!-- ── Main layout ─────────────────────────────────────── -->
+    <div class="main-layout">
+
+      <!-- LEFT: inputs + results -->
+      <aside class="side-panel">
+
+        <!-- Option type toggle -->
+        <div class="panel segment-panel">
+          <div class="segment-control">
+            <button class="seg-btn active" data-option-type="call">Call</button>
+            <button class="seg-btn" data-option-type="put">Put</button>
+          </div>
+        </div>
+
+        <!-- Parameter inputs -->
+        <div class="panel inputs-panel">
+          <div class="panel-title">Parameters</div>
+
+          <div class="param-row">
+            <div class="param-meta">
+              <label class="param-label" for="sliderS">S</label>
+              <span class="param-desc">Spot Price</span>
+            </div>
+            <div class="param-controls">
+              <input type="range" class="slider" id="sliderS" min="1" max="500" step="0.5" value="100" />
+              <input type="number" class="num-input" id="inputS" min="1" max="500" step="0.5" value="100" />
+            </div>
+          </div>
+
+          <div class="param-row">
+            <div class="param-meta">
+              <label class="param-label" for="sliderK">K</label>
+              <span class="param-desc">Strike Price</span>
+            </div>
+            <div class="param-controls">
+              <input type="range" class="slider" id="sliderK" min="1" max="500" step="0.5" value="100" />
+              <input type="number" class="num-input" id="inputK" min="1" max="500" step="0.5" value="100" />
+            </div>
+          </div>
+
+          <div class="param-row">
+            <div class="param-meta">
+              <label class="param-label" for="sliderT">T</label>
+              <span class="param-desc">Expiry (yrs)</span>
+            </div>
+            <div class="param-controls">
+              <input type="range" class="slider" id="sliderT" min="0.01" max="5" step="0.01" value="1" />
+              <input type="number" class="num-input" id="inputT" min="0.01" max="5" step="0.01" value="1" />
+            </div>
+          </div>
+
+          <div class="param-row">
+            <div class="param-meta">
+              <label class="param-label" for="sliderR">r</label>
+              <span class="param-desc">Rate (%)</span>
+            </div>
+            <div class="param-controls">
+              <!-- slider & input in percentage units (0–20) -->
+              <input type="range" class="slider" id="sliderR" min="0" max="20" step="0.25" value="5" />
+              <input type="number" class="num-input" id="inputR" min="0" max="20" step="0.25" value="5" />
+              <span class="unit">%</span>
+            </div>
+          </div>
+
+          <div class="param-row">
+            <div class="param-meta">
+              <label class="param-label" for="sliderSigma">σ</label>
+              <span class="param-desc">Volatility (%)</span>
+            </div>
+            <div class="param-controls">
+              <!-- slider & input in percentage units (1–150) -->
+              <input type="range" class="slider" id="sliderSigma" min="1" max="150" step="1" value="20" />
+              <input type="number" class="num-input" id="inputSigma" min="1" max="150" step="1" value="20" />
+              <span class="unit">%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div class="panel results-panel">
+          <div class="panel-title">Results</div>
+
+          <div class="price-display">
+            <span class="price-label">Option Price</span>
+            <span class="price-value" id="resPrice">—</span>
+          </div>
+
+          <table class="greeks-table">
+            <thead>
+              <tr><th>Greek</th><th>Value</th><th>Meaning</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="greek-name delta">Δ Delta</td>
+                <td class="greek-val" id="resDelta">—</td>
+                <td class="greek-hint">∂P/∂S</td>
+              </tr>
+              <tr>
+                <td class="greek-name gamma">Γ Gamma</td>
+                <td class="greek-val" id="resGamma">—</td>
+                <td class="greek-hint">∂²P/∂S²</td>
+              </tr>
+              <tr>
+                <td class="greek-name theta">Θ Theta</td>
+                <td class="greek-val" id="resTheta">—</td>
+                <td class="greek-hint">∂P/∂t /day</td>
+              </tr>
+              <tr>
+                <td class="greek-name vega">ν Vega</td>
+                <td class="greek-val" id="resVega">—</td>
+                <td class="greek-hint">∂P/∂σ /1%</td>
+              </tr>
+              <tr>
+                <td class="greek-name rho">ρ Rho</td>
+                <td class="greek-val" id="resRho">—</td>
+                <td class="greek-hint">∂P/∂r /1%</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="decomp">
+            <div class="decomp-row">
+              <span class="decomp-label">Intrinsic</span>
+              <span class="decomp-val" id="resIntrinsic">—</span>
+            </div>
+            <div class="decomp-row">
+              <span class="decomp-label">Time Value</span>
+              <span class="decomp-val" id="resTimeValue">—</span>
+            </div>
+            <div class="decomp-row">
+              <span class="decomp-label">d₁</span>
+              <span class="decomp-val" id="resD1">—</span>
+            </div>
+            <div class="decomp-row">
+              <span class="decomp-label">d₂</span>
+              <span class="decomp-val" id="resD2">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Formula reference -->
+        <div class="panel formula-panel">
+          <div class="panel-title">Formula</div>
+          <div class="formula">
+            <div class="formula-line">d₁ = [ln(S/K) + (r + σ²/2)T] / σ√T</div>
+            <div class="formula-line">d₂ = d₁ − σ√T</div>
+            <div class="formula-line">C = S·N(d₁) − K·e<sup>−rT</sup>·N(d₂)</div>
+            <div class="formula-line">P = K·e<sup>−rT</sup>·N(−d₂) − S·N(−d₁)</div>
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- RIGHT: sensitivity charts -->
+      <main class="charts-area">
+        <div class="charts-header">
+          <span class="charts-title">Sensitivity Analysis</span>
+          <span class="charts-hint">Yellow line = current parameter value</span>
+        </div>
+        <div class="charts-grid">
+          <div class="chart-card">
+            <canvas id="chartPriceVsSpot"></canvas>
+          </div>
+          <div class="chart-card">
+            <canvas id="chartPriceVsVol"></canvas>
+          </div>
+          <div class="chart-card">
+            <canvas id="chartPriceVsTime"></canvas>
+          </div>
+          <div class="chart-card">
+            <canvas id="chartDeltaVsSpot"></canvas>
+          </div>
+          <div class="chart-card">
+            <canvas id="chartGammaVsSpot"></canvas>
+          </div>
+          <div class="chart-card">
+            <canvas id="chartVegaVsVol"></canvas>
+          </div>
+        </div>
+      </main>
+
+    </div><!-- /main-layout -->
+  </div><!-- /app-container -->
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
