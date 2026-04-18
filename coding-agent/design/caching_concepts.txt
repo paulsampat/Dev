@@ -1,0 +1,258 @@
+================================================================================
+PROMPT CACHING — CONCEPTS & CLARIFICATIONS
+================================================================================
+
+Captured from design conversation.
+                                                                                        
+  ---
+  Prompt caching — two cache points:                                                                      
+                                                                                                          
+  Render order:  TOOLS → SYSTEM → MESSAGES                                                                
+                   ↑          ↑                                                                           
+              cache here   cache here                       
+                                                                                                          
+  - CACHED_TOOLS — adds cache_control to the last tool. Since tools render first, this caches all 6 tool  
+  schemas together as the opening prefix.                                                                 
+  - CACHED_SYSTEM — wraps the system prompt in a content block with cache_control. Caches everything up to
+   and including the system prompt.                                                                       
+   
+  On iteration 1 of a run: cache is written (1.25× cost). From iteration 2 onwards: cache is read (0.10×  
+  cost). That's a ~90% saving on the system prompt + tools on every subsequent call.
+                                                                                                          
+  ---                                                       
+  Usage tracking — printed after every iteration:
+                                                                                                          
+  [usage]  in: 312  cache_write: 1,847  cache_read: 0  out: 543  cache: WRITE  cost: $0.0232  total:
+  $0.0232                                                                                                 
+  [usage]  in: 89   cache_write: 0      cache_read: 1,847  out: 201  cache: HIT ✓  cost: $0.0062  total:
+  $0.0294                                                                                                 
+                                                            
+  You can see exactly what's being cached, what's hitting, and the running cost total. HIT ✓ means the    
+  cache is working.                                         
+                                                                                                          
+  ---                                                       
+  Ready for Phase 5 (error handling, persistence, logging)?
+                                                                                                          
+✻ Sautéed for 1m 11s                     
+                                                                                                          
+※ recap: Building a coding agent with Claude API and tool use, currently on Phase 4 which adds prompt     
+  caching and usage tracking. Next step is Phase 5 — error handling, conversation persistence, and        
+  logging.                                                                                                
+                                                                                                          
+❯ how does the cache help with token usage                                                                
+                                           
+⏺ The cache helps because the system prompt and tool definitions are sent on every single API call — every
+   iteration of the loop.                
+                                                                                                          
+  Without caching, every iteration pays full price for those tokens:                                      
+                                                                                                          
+  Iteration 1:  [system: 500 tokens] + [tools: 1,200 tokens] + [messages] → full price × 1,700            
+  Iteration 2:  [system: 500 tokens] + [tools: 1,200 tokens] + [messages] → full price × 1,700            
+  Iteration 3:  [system: 500 tokens] + [tools: 1,200 tokens] + [messages] → full price × 1,700            
+  ...                                                                                                     
+                                                                                                          
+  With caching, you pay to write the prefix once, then read it cheaply on every subsequent call:          
+                                                            
+  Iteration 1:  [system + tools: 1,700 tokens] → cache WRITE (1.25× price)                                
+  Iteration 2:  [system + tools: 1,700 tokens] → cache READ  (0.10× price) ← 90% cheaper                  
+  Iteration 3:  [system + tools: 1,700 tokens] → cache READ  (0.10× price) ← 90% cheaper                  
+  ...                                                                                                     
+                                                                                                          
+  The key insight is that the system prompt and tools never change during a run. They're the same bytes on
+   every call. Without caching, you're paying Claude to "re-read" the same instructions and tool schemas
+  on every iteration as if it had never seen them before.                                                 
+                                                            
+  The message history does grow each iteration (tool calls, results, responses get appended), but that    
+  part can't be cached because it changes every time. The savings are specifically on the stable prefix —
+  system prompt + tools — which is typically the largest fixed cost per call.                             
+                                                            
+  For a task that takes 10 iterations, the saving on just those 1,700 tokens looks like:                  
+   
+  Without cache:  1,700 × 10 × $5.00/1M = $0.085                                                          
+  With cache:     1,700 × $6.25/1M (write once) + 1,700 × 9 × $0.50/1M (read 9×) = $0.011 + $0.008 =      
+  $0.019                                                                                                  
+                                                                                                          
+  Saving: ~78%                                                                                            
+                                                            
+  The longer the task runs, the better the saving.                                                        
+                                                            
+❯ if I don't send the tool definitions on every prompt - given Claude is stateless, how dows it know what 
+   tool are available to it?                                                                              
+                                                                                                          
+⏺ Great question — and this is the crucial point about how the API works.                                 
+                                                                                                          
+  You do have to send the tool definitions on every call. There's no way around it. Claude is completely  
+  stateless — each API call is independent with zero memory of previous calls.
+                                                                                                          
+  What caching changes is how much you pay for sending them, not whether you send them.                   
+   
+  Without cache:                                                                                          
+    Call 1: send tools (1,200 tokens) → charged 1,200 × full price
+    Call 2: send tools (1,200 tokens) → charged 1,200 × full price                                        
+    Call 3: send tools (1,200 tokens) → charged 1,200 × full price                                        
+                                                                                                          
+  With cache:                                                                                             
+    Call 1: send tools (1,200 tokens) → charged 1,200 × 1.25x (cache write)
+    Call 2: send tools (1,200 tokens) → charged 1,200 × 0.10x (cache read)                                
+    Call 3: send tools (1,200 tokens) → charged 1,200 × 0.10x (cache read)
+                                                                                                          
+  The bytes are transmitted every time either way. What Anthropic does on their side is recognise that the
+   prefix bytes are identical to a previously cached version and charge you the cheaper read rate instead 
+  of processing them from scratch.                                                                        
+                                                            
+  Think of it like a photocopier that charges per page. Caching doesn't mean you send fewer pages — it    
+  means Anthropic charges you less for pages they've seen before.
+                                                                                                          
+  So in agent.py, CACHED_TOOLS and CACHED_SYSTEM go into every single API call — the cache_control flag   
+  just tells Anthropic "please cache this prefix and charge me less next time I send the same thing."
+                                                                                                          
+※ recap: Building a coding agent with Claude API and tool use, currently on Phase 4 with prompt caching   
+  and usage tracking complete. Next action is Phase 5 — error handling, persistence, and logging.
+                                                                                                          
+❯ how does Anthropic have a cache if it is stateless?                                                     
+                                                                                                          
+⏺ This is the distinction between Claude being stateless and Anthropic's infrastructure having a cache.   
+                                         
+  They operate at different levels:                                                                       
+   
+  Your app                                                                                                
+     │                                                      
+     │  sends full conversation + tools + system prompt
+     ▼
+  Anthropic API (has a cache)
+     │
+     │  checks: have I seen this exact prefix before?
+     │  YES → skip re-processing it, charge 0.10×
+     │  NO  → process it, store it, charge 1.25×
+     ▼
+  Claude (stateless — sees the full input either way)
+
+  Claude is stateless — it has no memory between calls. Every time it runs, it reads the full input you
+  send and produces a response. It has no idea a cache exists.
+
+  Anthropic's servers are not stateless — they run infrastructure that can recognise when the opening
+  bytes of a request match something they've processed recently, skip the expensive
+  re-tokenisation/processing of that prefix, and pass Claude the result directly.
+
+  The cache lives on Anthropic's servers, not inside Claude's model weights. It's the same way a database
+  query cache works — the database itself doesn't "remember" your query, but the server in front of it
+  does and can return a cached result without hitting the database again.
+
+  So:
+  - You always send everything (Claude needs it — it's stateless)
+  - Anthropic charges you less when the prefix matches a cached version (their servers recognise it)
+  - Claude never knows the difference
+
+  The 5-minute TTL is how long Anthropic keeps that cached prefix on their servers before discarding it.
+
+❯ that makes sense but how does that reduce my token usage as all bytes are still sent to opus?           
+                                                                                                
+⏺ You're right — it doesn't reduce token usage. I was imprecise earlier.                                  
+                                         
+  Caching reduces cost, not token count.                                                                  
+   
+  The tokens are still sent, still counted, still processed by Claude. What changes is the price per token
+   for the cached prefix:                                   
+                                                                                                          
+  Full price input:   $5.00 per 1M tokens                   
+  Cache write:        $6.25 per 1M tokens  (more expensive — paying to store it)
+  Cache read:         $0.50 per 1M tokens  (cheaper — Anthropic skips reprocessing)                       
+   
+  So when I said "90% saving on tokens" earlier — I should have said "90% saving on the cost of those     
+  tokens." The token count in the usage breakdown stays the same, just reported under
+  cache_read_input_tokens instead of input_tokens.                                                        
+                                                            
+  The reason Anthropic can charge less for cache reads is that they skip the expensive computation of     
+  re-processing a prefix they've already seen — so they pass some of that saving on to you.
+                                                                                                          
+  To summarise what caching actually gives you:             
+
+  ┌────────────────────────────┬───────────────┬────────────────────────┐                                 
+  │                            │ Without Cache │       With Cache       │
+  ├────────────────────────────┼───────────────┼────────────────────────┤                                 
+  │ Tokens sent                │ 1,700         │ 1,700                  │
+  ├────────────────────────────┼───────────────┼────────────────────────┤
+  │ Tokens processed by Claude │ 1,700         │ 1,700                  │
+  ├────────────────────────────┼───────────────┼────────────────────────┤                                 
+  │ Cost per token             │ $5.00/1M      │ $0.50/1M (from iter 2) │
+  ├────────────────────────────┼───────────────┼────────────────────────┤                                 
+  │ What changes               │ —             │ the bill               │
+  └────────────────────────────┴───────────────┴────────────────────────┘                                 
+                                                            
+  Thanks for pushing on that — it's an important distinction. Ready for Phase 5?                          
+   
+❯ can you take this conversation on cache and create a file in my design folder called                    
+  caching_concepts.txt                                                                                    
+                                                                                                          
+⏺ Write(design/caching_concepts.txt)                                                                      
+  ⎿  Wrote 168 lines to design/caching_concepts.txt                                                       
+       1 ================================================================================                 
+       2 PROMPT CACHING — CONCEPTS & CLARIFICATIONS
+       3 ================================================================================                 
+       4                                                    
+       5 Captured from design conversation.                                                               
+       6                                                    
+       7
+       8 --------------------------------------------------------------------------------
+       9 WHAT CACHING DOES AND DOES NOT DO
+      10 --------------------------------------------------------------------------------
+     … +160 lines (ctrl+o to expand)
+
+⏺ Done. design/caching_concepts.txt covers:
+
+  - What caching does and does not do (cost vs token count)                                               
+  - The two-layer distinction (Claude stateless vs Anthropic infrastructure)
+  - Why tool definitions must still be sent every call                                                    
+  - Pricing breakdown                                                                                     
+  - A concrete 10-iteration saving example
+  - How it's implemented in this agent                                                                    
+  - How to read the usage output                            
+                                                
+
+
+
+ so the token cost from Anthropic is a blended cost of model tokenisation and pre-processing             
+  infrastructure cost?                                                                                    
+                                                                                                          
+⏺ Exactly right.                                                                                          
+                                                                                                          
+  When Anthropic charges you for input tokens, you're not just paying for the model to read your text —   
+  you're paying for the full pipeline:
+                                                                                                          
+  Your tokens arrive                                                                                      
+         │
+         ▼                                                                                                
+    Tokenisation       ← convert text to token IDs          
+         │                                                                                                
+         ▼
+    KV Cache Compute   ← compute key/value vectors for every token                                        
+         │             ← this is the expensive part (attention mechanism)                                 
+         ▼                                                                                                
+    Claude processes   ← model runs forward pass over the full context                                    
+         │                                                                                                
+         ▼                                                  
+    Output tokens generated                                                                               
+                                                            
+  The KV cache compute step is what Anthropic is actually discounting when you get a cache read. They've  
+  already computed the key/value vectors for that prefix on a previous request, stored them, and can skip
+  recomputing them for identical prefixes. That computation is the bulk of the processing cost.           
+                                                            
+  So the pricing tiers reflect actual infrastructure costs:                                               
+   
+  ┌────────────────────────┬─────────────────────────────────────────────────────────────┐                
+  │          Tier          │                   What you're paying for                    │
+  ├────────────────────────┼─────────────────────────────────────────────────────────────┤                
+  │ Full input ($5.00/1M)  │ Tokenisation + full KV computation + model forward pass     │
+  ├────────────────────────┼─────────────────────────────────────────────────────────────┤                
+  │ Cache write ($6.25/1M) │ Same as above + storing the KV vectors for later            │                
+  ├────────────────────────┼─────────────────────────────────────────────────────────────┤                
+  │ Cache read ($0.50/1M)  │ Tokenisation + loading stored KV vectors (no recomputation) │                
+  ├────────────────────────┼─────────────────────────────────────────────────────────────┤                
+  │ Output ($25.00/1M)     │ Autoregressive generation — most expensive per token        │
+  └────────────────────────┴─────────────────────────────────────────────────────────────┘                
+                                                            
+  Output tokens are 5× more expensive than input for this reason — generating each token requires a full  
+  forward pass through the model, whereas input tokens are processed in parallel.
+                                                                                                          
+  So yes — it's a blended cost reflecting compute, memory, and storage across Anthropic's infrastructure, 
+  not just a simple "per character" fee.                                               

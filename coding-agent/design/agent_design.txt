@@ -1,0 +1,308 @@
+================================================================================
+CODING AGENT — DESIGN DOCUMENT
+================================================================================
+
+Generated from design conversation covering architecture, phases, and decisions.
+
+--------------------------------------------------------------------------------
+OVERVIEW
+--------------------------------------------------------------------------------
+
+A coding agent built using the Claude API + Tool Use approach. The agent can
+read files, write files, edit files, run shell commands, search for files, and
+grep through code — enough to take on real coding tasks autonomously.
+
+Two approaches exist for building agents with Claude:
+
+  1. Claude API + Tool Use  — you run the loop, you execute the tools, you host
+                              everything. Maximum flexibility.
+  2. Managed Agents         — Anthropic runs the loop in a hosted container with
+                              bash/file tools built in. Better for stateful
+                              sessions with file workspaces.
+
+This agent uses approach 1.
+
+
+--------------------------------------------------------------------------------
+ARCHITECTURE
+--------------------------------------------------------------------------------
+
+At its heart, Claude is a stateless API. You send a conversation, it responds.
+"Agents" emerge from running that in a loop — where Claude can call tools, get
+results back, and keep going until it's done.
+
+Everything goes through POST /v1/messages.
+
+  User Input
+      │
+      ▼
+  ┌────────────────────────────────┐
+  │         Claude API             │
+  │    POST /v1/messages           │
+  │                                │
+  │  [system prompt]               │
+  │  [conversation history]        │
+  │  [tool definitions]            │
+  └────────────┬───────────────────┘
+               │
+       stop_reason == "tool_use"?
+       ┌───────┴────────┐
+      YES               NO
+       │                │
+       ▼                ▼
+  Execute Tool      Final Answer
+       │
+       ▼
+  Feed result back
+  into messages
+       │
+       └──────────────► Loop
+
+
+THE AGENTIC LOOP (step by step):
+
+  messages = [{"role": "user", "content": "...task..."}]
+
+  LOOP:
+    1. Call Claude with messages + tools defined
+    2. Claude responds with content blocks:
+         - TextBlock    → Claude's reasoning/response
+         - ToolUseBlock → Claude wants to call a tool
+    3. If stop_reason == "end_turn"   → DONE
+    4. If stop_reason == "pause_turn" → re-send as-is (server resumes)
+    5. If stop_reason == "tool_use"   → execute tools, feed results back, loop
+
+
+KEY CONCEPTS:
+
+  Tools
+    Functions you define (name, description, JSON schema). Claude decides when
+    to call them. The tools are low-level primitives (read, write, run, search).
+    Behaviour is defined in the system prompt. You shape what the agent does
+    through the system prompt — the tools just give it the ability to act.
+
+  Tool Use ID
+    Each tool call has a unique ID. Your tool result must reference this ID so
+    Claude knows which call it is responding to.
+
+  Message History
+    The full conversation (including all tool calls and results) is sent on
+    every request. This is the agent's "memory".
+
+  Adaptive Thinking
+    Claude Opus 4.6 supports thinking: {type: "adaptive"} where it reasons
+    internally before responding. Recommended for coding tasks.
+
+  Prompt Caching
+    The system prompt and tool definitions can be cached (prefix match).
+    For an agent with a large system prompt, this saves ~90% on repeated calls.
+
+
+MODEL: claude-opus-4-6
+  - Most capable model for coding and agent tasks
+  - Supports adaptive thinking
+  - 200K context window
+  - $5.00 / $25.00 per 1M input/output tokens
+
+
+--------------------------------------------------------------------------------
+PHASE 1 — TOOL DEFINITIONS  (tools.py)
+--------------------------------------------------------------------------------
+
+Define the JSON schemas that tell Claude what tools are available, what each
+tool does, and what parameters it expects. Nothing executes in this phase —
+these are purely Claude-facing metadata.
+
+TOOLS DEFINED:
+
+  read_file
+    Read the contents of a file. Supports optional start_line / end_line
+    parameters to read a slice of a large file.
+
+  write_file
+    Create or overwrite a file. Creates parent directories as needed.
+    Use for new files or complete rewrites.
+
+  str_replace_file
+    Replace an exact string in a file with new content. Use for targeted
+    edits — changing a function, fixing a bug — without rewriting the whole
+    file. Fails explicitly if old_string is not found or appears more than once.
+
+  run_bash
+    Execute a shell command. Returns stdout, stderr, and exit code.
+    Has a timeout parameter (default 30s).
+
+  search_files
+    Find files matching a glob pattern under a directory.
+    Glob is a pattern-matching syntax: * matches within a directory,
+    ** matches across directories. e.g. **/*.py finds all Python files.
+
+  grep_files
+    Search file contents for lines matching a regex pattern.
+    Returns matching lines with file path and line number.
+
+DESIGN DECISIONS:
+
+  - write_file and str_replace_file are separate tools so Claude can make
+    targeted edits without rewriting whole files (mirrors how a developer works).
+  - Descriptions are detailed — Claude reads these to decide when to use each
+    tool, so vague descriptions lead to wrong tool choices.
+  - Manual loop chosen over the SDK Tool Runner — gives full control to log,
+    approve, and debug each tool call.
+
+
+--------------------------------------------------------------------------------
+PHASE 2 — TOOL IMPLEMENTATIONS  (tool_executor.py)
+--------------------------------------------------------------------------------
+
+The actual Python code that executes when Claude calls a tool.
+A dispatch() function routes Claude's tool_use requests to the right
+implementation and returns a result string.
+
+SAFETY GUARDRAILS:
+
+  Path traversal prevention
+    _resolve() checks that any path Claude provides resolves within the
+    working directory. Prevents Claude from reading /etc/passwd etc.
+
+  Output size caps
+    _truncate() limits file reads to 100KB and bash output to 50KB.
+    Prevents flooding Claude's context window.
+
+  Bash timeout
+    run_bash defaults to 30s. Claude can request longer but can't hang
+    the agent indefinitely.
+
+  Binary file skip
+    grep_files silently skips files that can't be decoded as UTF-8.
+
+  Error strings, not exceptions
+    All errors return a descriptive string. The agent loop never crashes
+    due to a bad tool call.
+
+  str_replace_file strictness
+    Fails explicitly if old_string appears 0 or 2+ times. Forces Claude
+    to be precise rather than making ambiguous edits.
+
+dispatch(tool_name, tool_input) is the single entry point.
+The agent loop in Phase 3 calls this with whatever Claude requests.
+
+
+--------------------------------------------------------------------------------
+PHASE 3 — THE AGENT LOOP  (agent.py)
+--------------------------------------------------------------------------------
+
+Wires together tools.py and tool_executor.py into the agentic loop.
+
+LOOP LOGIC:
+
+  for each iteration (max 20):
+    1. Stream Claude's response → print text in real time
+    2. Append full response to message history
+    3. Check stop_reason:
+         end_turn   → done, return final text
+         pause_turn → re-send as-is (server resumed automatically)
+         tool_use   → execute tools, feed results back, loop
+
+CONFIGURATION:
+
+  MODEL          = "claude-opus-4-6"
+  MAX_TOKENS     = 16,000
+  MAX_ITERATIONS = 20        (hard ceiling — prevents infinite loops)
+
+  Adaptive thinking enabled: thinking={"type": "adaptive"}
+
+SYSTEM PROMPT RULES:
+
+  - Before writing or editing code, read relevant files first.
+  - Prefer str_replace_file for targeted edits over rewriting entire files.
+  - After making changes, run tests or check syntax to verify correctness.
+  - Use search_files and grep_files before reading individual files in
+    unfamiliar codebases.
+  - Be concise — don't repeat file contents back unless asked.
+  - Make a reasonable attempt on ambiguous tasks rather than asking questions.
+  - When generating a new project, always create:
+      .env             (placeholder entries for secrets/API keys)
+      requirements.txt (all third-party dependencies)
+      .gitignore       (.env, __pycache__, *.pyc, .venv, etc.)
+
+KEY DESIGN DECISIONS:
+
+  Streaming
+    Text appears in real time rather than waiting for the full response.
+    Essential for a coding agent where Claude may think for a while.
+
+  get_final_message()
+    Collects the complete response after streaming, giving structured
+    content blocks needed to extract tool calls.
+
+  Append full response.content (not just text)
+    The tool_use blocks must stay in history so the API can match them to
+    the tool_result blocks sent back. Sending just text causes a 400 error.
+
+  MAX_ITERATIONS = 20
+    A coding task shouldn't need more than 20 tool calls. If it does,
+    something is wrong.
+
+  How the task reaches Claude
+    run(task: str) takes a natural language string. It becomes the first
+    user message: messages = [{"role": "user", "content": task}]
+    Can also be passed from the command line: python agent.py 'your task'
+
+  Where the API is called
+    Only in the stream block:
+      client.messages.stream(model=MODEL, ..., messages=messages)
+    Everything else is Python orchestration around that single call,
+    repeated each iteration.
+
+  Why no special tool for .env / requirements.txt / .gitignore
+    The write_file tool is generic — it can create any file at any path.
+    Claude decides what to create based on system prompt instructions.
+    Tools are primitives; behaviour is defined in the system prompt.
+
+
+--------------------------------------------------------------------------------
+PROJECT STRUCTURE
+--------------------------------------------------------------------------------
+
+  coding-agent/
+  ├── agent.py          # Phase 3 — agentic loop, entry point
+  ├── tool_executor.py  # Phase 2 — tool implementations + dispatcher
+  ├── tools.py          # Phase 1 — tool schemas (Claude-facing definitions)
+  ├── requirements.txt  # anthropic, python-dotenv
+  ├── .env              # ANTHROPIC_API_KEY=... (never commit this)
+  ├── .gitignore        # .env, __pycache__, *.pyc, .venv/
+  └── agent_design.txt  # this file
+
+
+--------------------------------------------------------------------------------
+USAGE
+--------------------------------------------------------------------------------
+
+  # Install dependencies
+  pip install -r requirements.txt
+
+  # Add your API key to .env
+  ANTHROPIC_API_KEY=your_key_here
+
+  # Run from the command line
+  python agent.py 'create a FastAPI app with a /health endpoint'
+
+  # Or import and call directly
+  from agent import run
+  result = run("add type hints to all functions in main.py")
+
+
+--------------------------------------------------------------------------------
+PHASES REMAINING
+--------------------------------------------------------------------------------
+
+  Phase 4 — Optimisations
+    - Prompt caching on system prompt and tool definitions (~90% cost saving
+      on repeated calls)
+    - Context management for long sessions
+
+  Phase 5 — Polish
+    - Error handling (rate limits, API errors, tool failures)
+    - Conversation persistence (save/load message history)
+    - Logging

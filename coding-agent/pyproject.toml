@@ -1,0 +1,9 @@
+[project]
+name = "coding-agent"
+version = "0.1.0"
+description = "A coding agent built with Claude API and tool use"
+requires-python = ">=3.13"
+dependencies = [
+    "anthropic",
+    "python-dotenv",
+]
