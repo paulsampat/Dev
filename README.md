@@ -4,10 +4,12 @@ Next steps :
 Expose as an MCP exdpoint - done
 Expose as Langchain Tool
 
-(base) paulsampat@Mac black-scholes-pricer % python langchain_agent.py "Price a call option with S=100, K=105, T=0.25, r=0.05, sigma=0.20"
+How to RUN 
+python langchain_agent.py "Price a call option with S=100, K=105, T=0.25, r=0.05, sigma=0.20"
 
-[02/21/26 13:27:17] INFO     Processing request of type ListToolsRequest                                                                                                      server.py:720
-/Users/paulsampat/Dev/black-scholes-pricer/langchain_agent.py:46: LangGraphDeprecatedSinceV10: create_react_agent has been moved to `langchain.agents`. Please update your import to `from langchain.agents import create_agent`. Deprecated in LangGraph V1.0 to be removed in V2.0.
+
+---------> Sample Output
+
   agent = create_react_agent(llm, tools)
 [02/21/26 13:27:19] INFO     Processing request of type CallToolRequest                                                                                                       server.py:720
                     INFO     Processing request of type ListToolsRequest                                                                                                      server.py:720
