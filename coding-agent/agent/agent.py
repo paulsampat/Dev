@@ -1,23 +1,27 @@
 """
-Phase 6: CLI & UX polish — resume sessions, model/iteration overrides.
+Phase 6: CLI & UX polish — resume sessions, model/iteration overrides, CLAUDE.md.
 
 Added on top of Phase 5:
   - resume_session_id : load a saved session from disk and continue it,
                         preserving the full message history and cumulative cost.
   - model override    : pass a different Claude model string at call time.
   - max_iterations    : override the default iteration cap per run.
+  - CLAUDE.md         : if a CLAUDE.md exists in the working directory, its
+                        contents are appended to the system prompt so the agent
+                        follows project-specific coding guidelines automatically.
 """
 
 import os
 import time
 import uuid
+from pathlib import Path
 
 import anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from agent.logger import (
+from agent.logger import (  # noqa: E402
     log_error,
     log_iteration,
     log_session_end,
@@ -27,9 +31,9 @@ from agent.logger import (
     log_usage,
     log_warning,
 )
-from agent.persistence import load_session, save_session
-from tools.tool_executor import dispatch
-from tools.tools import TOOLS
+from agent.persistence import load_session, save_session  # noqa: E402
+from tools.tool_executor import dispatch  # noqa: E402
+from tools.tools import TOOLS  # noqa: E402
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -83,14 +87,56 @@ CACHED_TOOLS = [
     for i, tool in enumerate(TOOLS)
 ]
 
-# System prompt as a content block with cache_control.
-CACHED_SYSTEM = [
-    {
-        "type": "text",
-        "text": SYSTEM_PROMPT,
-        "cache_control": {"type": "ephemeral"},
-    }
-]
+
+SKILLS_DIR = Path(__file__).parent.parent / "skills"
+
+
+def _load_claude_md() -> str | None:
+    """
+    Read CLAUDE.md from the current working directory.
+
+    Returns the file contents as a string, or None if no CLAUDE.md exists.
+    """
+    path = Path.cwd() / "CLAUDE.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    return None
+
+
+def _load_skills(names: list[str]) -> dict[str, str]:
+    """
+    Load named skills from the skills/ directory.
+
+    Each skill is a <name>.md file. Unknown or missing skill names are
+    reported as warnings and skipped rather than raising an error.
+
+    Returns a dict of {skill_name: content}.
+    """
+    loaded: dict[str, str] = {}
+    for name in names:
+        path = SKILLS_DIR / f"{name}.md"
+        if not path.exists():
+            print(f"  [warning] skill '{name}' not found at {path}")
+        else:
+            loaded[name] = path.read_text(encoding="utf-8").strip()
+    return loaded
+
+
+def _build_system(claude_md: str | None, skills: dict[str, str] | None = None) -> list[dict]:
+    """
+    Build the cached system prompt content block.
+
+    Appends CLAUDE.md project guidelines and any loaded skills under clear
+    headings. The entire block carries cache_control so it is cached as one
+    prefix — stable across all iterations within a run.
+    """
+    text = SYSTEM_PROMPT
+    if claude_md:
+        text += f"\n\n---\nProject-specific guidelines (from CLAUDE.md):\n\n{claude_md}"
+    if skills:
+        for name, content in skills.items():
+            text += f"\n\n---\nSkill — {name}:\n\n{content}"
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
 
 
 # ── Logging helpers ───────────────────────────────────────────────────────────
@@ -139,6 +185,7 @@ def run(
     resume_session_id: str | None = None,
     model: str = MODEL,
     max_iterations: int = MAX_ITERATIONS,
+    skills: list[str] | None = None,
 ) -> str:
     """
     Run the coding agent on a task.
@@ -148,11 +195,21 @@ def run(
         resume_session_id  : If set, load this session from disk and continue it.
         model              : Claude model string to use (default: MODEL constant).
         max_iterations     : Maximum agentic loop iterations (default: MAX_ITERATIONS).
+        skills             : List of skill names to load from skills/ directory.
 
     Returns:
         The agent's final text response.
     """
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    # ── Load CLAUDE.md and skills ─────────────────────────────────────────────
+    claude_md = _load_claude_md()
+    loaded_skills = _load_skills(skills) if skills else {}
+    cached_system = _build_system(claude_md, loaded_skills)
+    if claude_md:
+        print(f"  [CLAUDE.md loaded — {len(claude_md)} chars]")
+    if loaded_skills:
+        print(f"  [skills loaded — {', '.join(loaded_skills)}]")
 
     # ── Resume or start fresh ─────────────────────────────────────────────────
     if resume_session_id:
@@ -190,7 +247,7 @@ def run(
                     with client.messages.stream(
                         model=model,
                         max_tokens=MAX_TOKENS,
-                        system=CACHED_SYSTEM,
+                        system=cached_system,
                         tools=CACHED_TOOLS,
                         thinking={"type": "adaptive"},
                         messages=messages,

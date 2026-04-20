@@ -7,3 +7,8 @@ dependencies = [
     "anthropic",
     "python-dotenv",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.11",
+]

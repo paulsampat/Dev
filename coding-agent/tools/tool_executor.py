@@ -7,7 +7,6 @@ requests to the right implementation and returns a result string.
 """
 
 import fnmatch
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -231,6 +230,37 @@ def grep_files(
     return result
 
 
+def lint_files(path: str | None = None, fix: bool = False) -> str:
+    """Run ruff on a file or directory and return violations."""
+    target = _resolve(path) if path else DEFAULT_WORKING_DIR
+
+    if not target.exists():
+        return f"Error: path not found: {path}"
+
+    cmd = ["ruff", "check", str(target)]
+    if fix:
+        cmd.append("--fix")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        return "Error: ruff is not installed. Run `uv add ruff --dev` to install it."
+    except subprocess.TimeoutExpired:
+        return "Error: ruff timed out after 60s."
+
+    output = result.stdout.strip() or result.stderr.strip()
+
+    if result.returncode == 0:
+        return f"No lint violations found in {target}."
+
+    return _truncate(output, MAX_OUTPUT_BYTES, label="lint output")
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 def dispatch(tool_name: str, tool_input: dict) -> str:
@@ -255,6 +285,8 @@ def dispatch(tool_name: str, tool_input: dict) -> str:
                 return search_files(**tool_input)
             case "grep_files":
                 return grep_files(**tool_input)
+            case "lint_files":
+                return lint_files(**tool_input)
             case _:
                 return f"Error: unknown tool '{tool_name}'"
     except PermissionError as e:

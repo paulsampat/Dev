@@ -81,6 +81,13 @@ examples:
         dest="max_iter",
         help=f"Maximum agentic loop iterations (default: {MAX_ITERATIONS}).",
     )
+    parser.add_argument(
+        "--skill",
+        nargs="+",
+        metavar="SKILL",
+        dest="skills",
+        help="One or more skills to load from the skills/ directory (e.g. --skill fastapi testing).",
+    )
 
     args = parser.parse_args()
 
@@ -103,6 +110,7 @@ examples:
             resume_session_id=args.resume,
             model=args.model,
             max_iterations=args.max_iter,
+            skills=args.skills,
         )
         print(result)
         return
@@ -117,6 +125,7 @@ examples:
         args.task,
         model=args.model,
         max_iterations=args.max_iter,
+        skills=args.skills,
     )
     print(result)
 

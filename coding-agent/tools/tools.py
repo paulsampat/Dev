@@ -160,6 +160,29 @@ TOOLS = [
         },
     },
     {
+        "name": "lint_files",
+        "description": (
+            "Run the ruff linter on a file or directory and return any violations found. "
+            "Use this after writing or editing code to check for errors, style issues, and "
+            "unused imports before considering a task complete. "
+            "Set fix=true to automatically fix any auto-fixable violations in place."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File or directory to lint. Defaults to the working directory.",
+                },
+                "fix": {
+                    "type": "boolean",
+                    "description": "Optional. If true, auto-fix violations where possible. Defaults to false.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "grep_files",
         "description": (
             "Search the contents of files for lines matching a regex pattern. "
