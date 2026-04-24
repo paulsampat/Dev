@@ -11,6 +11,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from tools.guards import check_command, check_path_read, check_path_write
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 # Default working directory for the agent. Tools resolve relative paths
@@ -57,6 +59,7 @@ def _truncate(text: str, max_bytes: int, label: str = "output") -> str:
 def read_file(path: str, start_line: int | None = None, end_line: int | None = None) -> str:
     """Read a file, optionally returning only a slice of lines."""
     resolved = _resolve(path)
+    check_path_read(resolved)
 
     if not resolved.exists():
         return f"Error: file not found: {path}"
@@ -85,6 +88,7 @@ def read_file(path: str, start_line: int | None = None, end_line: int | None = N
 def write_file(path: str, content: str) -> str:
     """Write content to a file, creating parent directories as needed."""
     resolved = _resolve(path)
+    check_path_write(resolved)
 
     try:
         resolved.parent.mkdir(parents=True, exist_ok=True)
@@ -99,6 +103,7 @@ def write_file(path: str, content: str) -> str:
 def str_replace_file(path: str, old_string: str, new_string: str) -> str:
     """Replace an exact string in a file."""
     resolved = _resolve(path)
+    check_path_write(resolved)
 
     if not resolved.exists():
         return f"Error: file not found: {path}"
@@ -131,6 +136,7 @@ def str_replace_file(path: str, old_string: str, new_string: str) -> str:
 
 def run_bash(command: str, working_dir: str | None = None, timeout: int = 30) -> str:
     """Run a shell command and return combined stdout + stderr."""
+    check_command(command)
     cwd = Path(working_dir).resolve() if working_dir else DEFAULT_WORKING_DIR
 
     try:
