@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "paulsampat-plugins",
+  "description": "Claude Code plugins by Paul Sampat",
+  "owner": {
+    "name": "Paul Sampat",
+    "email": "paul.sampat@hotmail.com"
+  },
+  "plugins": [
+    {
+      "name": "observability",
+      "description": "Guide teams through implementing structured logging, metrics, distributed tracing, health endpoints, and alerting for any service.",
+      "version": "1.0.0",
+      "source": "github",
+      "repo": "paulsampat/observability-plugin",
+      "author": {
+        "name": "Paul Sampat",
+        "email": "paul.sampat@hotmail.com"
+      },
+      "category": "monitoring",
+      "tags": ["observability", "logging", "metrics", "tracing", "opentelemetry"]
+    }
+  ]
+}
