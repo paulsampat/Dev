@@ -1,0 +1,14 @@
+{
+  "name": "Paul Sampat — Claude Code Plugin Registry",
+  "description": "Internal plugin registry for Claude Code. Install a plugin with: claude plugins install <plugin.url>",
+  "plugins": [
+    {
+      "name": "observability",
+      "description": "Guide teams through implementing structured logging, metrics, distributed tracing, health endpoints, and alerting for any service.",
+      "version": "1.0.0",
+      "url": "https://github.com/paulsampat/observability-plugin",
+      "author": "Paul Sampat",
+      "keywords": ["observability", "logging", "metrics", "tracing", "opentelemetry", "monitoring"]
+    }
+  ]
+}
