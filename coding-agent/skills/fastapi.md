@@ -1,4 +1,10 @@
-# FastAPI skill
+# FastAPI Skill
+
+**Purpose:** Enforce FastAPI conventions and best practices when building or reviewing a FastAPI service.
+**Use when:** Generating a new FastAPI project, adding routes or routers, or reviewing existing FastAPI code.
+**Invoke with:** `--skill fastapi` or `/fastapi`
+
+---
 
 ## Project structure
 - Entry point is `main.py` with an `app = FastAPI()` instance

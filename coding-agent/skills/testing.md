@@ -1,4 +1,10 @@
-# Testing skill
+# Testing Skill
+
+**Purpose:** Enforce pytest conventions and testing best practices when writing or reviewing tests.
+**Use when:** Adding tests to a new or existing project, reviewing test coverage, or setting up a test suite from scratch.
+**Invoke with:** `--skill testing` or `/testing`
+
+---
 
 ## Framework
 - Use pytest for all tests

@@ -1,4 +1,10 @@
-# Python style skill
+# Python Style Skill
+
+**Purpose:** Enforce Python code style conventions including type hints, structure, and formatting.
+**Use when:** Generating or reviewing any Python code to ensure it meets team style standards.
+**Invoke with:** `--skill python_style` or `/python_style`
+
+---
 
 ## Type hints
 - All function signatures must have type hints on parameters and return type
