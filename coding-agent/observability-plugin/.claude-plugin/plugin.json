@@ -1,0 +1,10 @@
+{
+  "name": "observability",
+  "description": "Guide teams through implementing structured logging, metrics, distributed tracing, health endpoints, and alerting for any service.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Paul Sampat"
+  },
+  "license": "MIT",
+  "keywords": ["observability", "logging", "metrics", "tracing", "opentelemetry", "monitoring"]
+}

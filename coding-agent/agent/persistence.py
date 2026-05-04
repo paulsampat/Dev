@@ -16,8 +16,11 @@ The SDK accepts plain dicts when loading back — no reconstruction needed.
 """
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 SESSIONS_DIR = Path(__file__).parent.parent / "sessions"
 SESSIONS_DIR.mkdir(exist_ok=True)
@@ -25,7 +28,7 @@ SESSIONS_DIR.mkdir(exist_ok=True)
 
 # ── Serialisation helpers ─────────────────────────────────────────────────────
 
-def _serialise_content(content) -> list[dict] | str:
+def _serialise_content(content: str | list[object]) -> list[dict[str, object]] | str:
     """
     Convert a message's content to a JSON-serialisable form.
 
@@ -49,7 +52,7 @@ def _serialise_content(content) -> list[dict] | str:
     return result
 
 
-def _serialise_messages(messages: list[dict]) -> list[dict]:
+def _serialise_messages(messages: list[dict[str, object]]) -> list[dict[str, object]]:
     """Serialise a full message list for JSON storage."""
     return [
         {"role": msg["role"], "content": _serialise_content(msg["content"])}
@@ -62,7 +65,7 @@ def _serialise_messages(messages: list[dict]) -> list[dict]:
 def save_session(
     session_id: str,
     task: str,
-    messages: list[dict],
+    messages: list[dict[str, object]],
     total_cost: float,
     iterations: int,
     status: str = "completed",
@@ -97,7 +100,7 @@ def save_session(
     return path
 
 
-def load_session(session_id: str) -> dict:
+def load_session(session_id: str) -> dict[str, object]:
     """
     Load a saved session from disk.
 
@@ -117,7 +120,7 @@ def load_session(session_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def list_sessions() -> list[dict]:
+def list_sessions() -> list[dict[str, object]]:
     """
     List all saved sessions, most recent first.
 
@@ -137,6 +140,7 @@ def list_sessions() -> list[dict]:
                 "iterations": data.get("iterations"),
                 "saved_at":   data.get("saved_at"),
             })
-        except (json.JSONDecodeError, KeyError):
+        except (json.JSONDecodeError, KeyError) as e:
+            _logger.warning("Skipping corrupt session file %s: %s", path, e)
             continue
     return sessions

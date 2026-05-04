@@ -60,7 +60,7 @@ def log_iteration(session_id: str, iteration: int, stop_reason: str) -> None:
     )
 
 
-def log_tool_call(session_id: str, tool_name: str, tool_input: dict) -> None:
+def log_tool_call(session_id: str, tool_name: str, tool_input: dict[str, object]) -> None:
     # Log tool name always; truncate input to keep log readable
     input_repr = str(tool_input)
     if len(input_repr) > 200:

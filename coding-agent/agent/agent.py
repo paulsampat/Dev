@@ -40,6 +40,7 @@ from tools.tools import TOOLS  # noqa: E402
 MODEL = "claude-opus-4-6"
 MAX_TOKENS = 16_000
 MAX_ITERATIONS = 20
+STREAM_TIMEOUT = 300.0  # seconds — generous for long-running tool-heavy tasks
 
 # Pricing per million tokens (Opus 4.6)
 PRICE_INPUT        = 5.00 / 1_000_000   # full-price input
@@ -141,7 +142,7 @@ def _build_system(claude_md: str | None, skills: dict[str, str] | None = None) -
 
 # ── Logging helpers ───────────────────────────────────────────────────────────
 
-def _print_tool_call(name: str, tool_input: dict) -> None:
+def _print_tool_call(name: str, tool_input: dict[str, object]) -> None:
     print(f"\n  ► tool call : {name}")
     for k, v in tool_input.items():
         display = repr(v) if not isinstance(v, str) else v
@@ -157,7 +158,7 @@ def _print_tool_result(result: str) -> None:
     print(f"  ◄ result    : {preview}{suffix}")
 
 
-def _print_usage(usage, iteration_cost: float, total_cost: float) -> None:
+def _print_usage(usage: anthropic.types.Usage, iteration_cost: float, total_cost: float) -> None:
     """Print token usage and cost breakdown for one iteration."""
     cache_read    = getattr(usage, "cache_read_input_tokens", 0) or 0
     cache_write   = getattr(usage, "cache_creation_input_tokens", 0) or 0
@@ -251,6 +252,7 @@ def run(
                         tools=CACHED_TOOLS,
                         thinking={"type": "adaptive"},
                         messages=messages,
+                        timeout=STREAM_TIMEOUT,
                     ) as stream:
                         for event in stream:
                             if (
